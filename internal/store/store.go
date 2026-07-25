@@ -85,7 +85,14 @@ type Task struct {
 	Updated   time.Time  `json:"updated"`
 	Completed *time.Time `json:"completed,omitempty"`
 
-	Entries []Entry `json:"entries"`
+	Entries []Entry  `json:"entries"`
+	Remarks []Remark `json:"remarks,omitempty"`
+}
+
+// Remark 是使用者自己補的備註（AI 不會動它）。
+type Remark struct {
+	Time time.Time `json:"time"`
+	Text string    `json:"text"`
 }
 
 // Log 是整份紀錄檔。
@@ -236,6 +243,11 @@ func (t *Task) AddEntry(note string, files, created []string) {
 		Time: now, Note: strings.TrimSpace(note), Files: files, New: created,
 	})
 	t.Updated = now
+}
+
+// AddRemark 補一則備註。
+func (t *Task) AddRemark(text string) {
+	t.Remarks = append(t.Remarks, Remark{Time: time.Now(), Text: strings.TrimSpace(text)})
 }
 
 // Complete 把任務標記為完成，並填上完成紀錄需要的欄位。

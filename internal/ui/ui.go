@@ -21,8 +21,7 @@ type mode int
 
 const (
 	modeList mode = iota
-	modeAddTask
-	modeAddNote
+	modeAddRemark
 )
 
 // 頁籤。
@@ -31,7 +30,7 @@ const (
 	tabActive
 )
 
-var tabNames = []string{"完成紀錄", "進行中"}
+var tabNames = []string{"完成", "進行中"}
 
 // Model 是 TUI 狀態。
 type Model struct {
@@ -175,26 +174,10 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		val := strings.TrimSpace(m.input.Value())
 		if val != "" {
-			switch m.mode {
-			case modeAddTask:
-				t := m.log.AddTask(val, store.KindFeature, nil)
+			if t := m.current(); t != nil {
+				t.AddRemark(val)
 				m.save()
-				m.tab = tabActive
-				for i, v := range m.visible() {
-					if v.ID == t.ID {
-						m.cursor[m.tab] = i
-					}
-				}
-				m.status = "已新增 " + t.ID
-			case modeAddNote:
-				if t := m.current(); t != nil {
-					t.AddEntry(val, nil, nil)
-					if t.Status == store.StatusTodo {
-						t.SetStatus(store.StatusInProgress)
-					}
-					m.save()
-					m.status = "已紀錄步驟到 " + t.ID
-				}
+				m.status = "已加備註到 " + t.ID
 			}
 		}
 		m.mode = modeList
@@ -255,37 +238,15 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+u", "pgup":
 		m.detail.HalfViewUp()
 
-	// ── 編輯 ──
-	case "a":
-		m.mode = modeAddTask
-		m.input.Placeholder = "新功能標題"
-		m.input.Focus()
-		m.status = ""
+	// ── 備註 ──
 	case "n":
 		if m.current() != nil {
-			m.mode = modeAddNote
-			m.input.Placeholder = "這個步驟做了什麼"
+			m.mode = modeAddRemark
+			m.input.Placeholder = "補一則備註"
 			m.input.Focus()
 			m.status = ""
 		}
-	case "s":
-		if t := m.current(); t != nil {
-			was := m.tab
-			t.SetStatus(store.NextStatus(t.Status))
-			m.save()
-			if t.Status == store.StatusDone {
-				m.setTab(tabDone)
-			} else if was == tabDone {
-				m.setTab(tabActive)
-			}
-			for i, v := range m.visible() {
-				if v.ID == t.ID {
-					m.cursor[m.tab] = i
-				}
-			}
-			m.clampCursor()
-			m.status = t.ID + " → " + statusLabel[t.Status]
-		}
+
 	case "r":
 		m.mtime = time.Time{}
 		m.reloadIfChanged()
@@ -337,18 +298,7 @@ var (
 		store.KindDocs:     "文件",
 	}
 
-	// mascot 是 cairn 的吉祥物：三顆疊在一起的圓潤石頭，最上面那顆有眼睛。
-	// 想換成自己的圖案的話，只要保持每一行的顯示寬度一致就好（這裡是 11 欄、6 行）。
-	mascot = []string{
-		"   ╭───╮   ",
-		"  ( • • )  ",
-		"  ╭─────╮  ",
-		" (       ) ",
-		" ╭───────╮ ",
-		"(_________)",
-	}
-
-	// wordmark 是 cairn 的大型招牌（6 行、37 欄），由上到下套 wordmarkRamp 的灰階漸層。
+	// wordmark 是 cairn 的大型招牌（6 行），由上到下套 wordmarkRamp 的灰階漸層。
 	wordmark = []string{
 		" ██████╗ █████╗ ██╗██████╗ ███╗   ██╗",
 		"██╔════╝██╔══██╗██║██╔══██╗████╗  ██║",
@@ -357,7 +307,6 @@ var (
 		"╚██████╗██║  ██║██║██║  ██║██║ ╚████║",
 		" ╚═════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝",
 	}
-	wordmarkWidth = 37
 
 	// wordmarkRamp 是招牌的灰階漸層：由上而下逐漸變淡。
 	wordmarkRamp = []lipgloss.AdaptiveColor{
@@ -486,12 +435,6 @@ func (m Model) View() string {
 	return strings.Join([]string{head, m.renderTabs(), body, m.renderFooter()}, "\n")
 }
 
-// counts 是「完成 N ・ 未完成 M」這串字。
-func (m Model) counts() string {
-	c := m.log.Counts()
-	return fmt.Sprintf("完成 %d ・ 未完成 %d", c[store.StatusDone], len(m.log.Tasks)-c[store.StatusDone])
-}
-
 func (m Model) projectName() string {
 	if m.log.Project == "" {
 		return "未命名專案"
@@ -499,28 +442,20 @@ func (m Model) projectName() string {
 	return m.log.Project
 }
 
-// renderBanner 畫出大型招牌 + 吉祥物 + 專案名稱。
+// renderBanner 畫出大型招牌與專案名稱。
 func (m Model) renderBanner() string {
-	const mascotTop = 0 // 吉祥物與招牌等高，逐行對齊
-	pet := lipgloss.NewStyle().Foreground(colAccent)
-
 	lines := make([]string, 0, len(wordmark)+1)
 	for i, w := range wordmark {
-		line := " " + lipgloss.NewStyle().Foreground(wordmarkRamp[i]).Render(w)
-		if j := i - mascotTop; j >= 0 && j < len(mascot) {
-			line += strings.Repeat(" ", wordmarkWidth-lipgloss.Width(w)+3) + pet.Render(mascot[j])
-		}
-		lines = append(lines, line)
+		lines = append(lines, " "+lipgloss.NewStyle().Foreground(wordmarkRamp[i]).Render(w))
 	}
-	lines = append(lines, " "+chip("["+m.projectName()+"]", bgLabel, colText, true)+
-		dimStyle.Render("  "+m.counts()))
+	lines = append(lines, " "+chip("["+m.projectName()+"]", bgLabel, colText, true))
 	return strings.Join(lines, "\n")
 }
 
 // renderHeader 是矮視窗或窄畫面時的單行標題。
 func (m Model) renderHeader() string {
 	brand := chip("cairn", colAccent, colOn, true)
-	rest := " [" + m.projectName() + "]   " + m.counts()
+	rest := " [" + m.projectName() + "]"
 	w := m.width - lipgloss.Width(brand)
 	if w < 1 {
 		w = 1
@@ -551,7 +486,7 @@ func (m Model) renderList() string {
 		if m.tab == tabDone {
 			rows = append(rows, dimStyle.Render("（還沒有完成的功能）"))
 		} else {
-			rows = append(rows, dimStyle.Render("（沒有進行中的工作，按 a 新增）"))
+			rows = append(rows, dimStyle.Render("（沒有進行中的工作）"))
 		}
 	}
 	end := m.offset[m.tab] + m.listRows()
@@ -560,9 +495,9 @@ func (m Model) renderList() string {
 	}
 	for i := m.offset[m.tab]; i < end; i++ {
 		t := v[i]
-		when := t.CompletedAt().Format("01-02")
+		when := t.CompletedAt().Format("01-02 15:04")
 		if m.tab != tabDone {
-			when = humanizeShort(t.Updated)
+			when = t.Updated.Format("01-02 15:04")
 		}
 		title := truncate(t.Title, cw-4)
 		meta := fmt.Sprintf("%s  %s  %s", t.ID, kindLabel[t.Kind], when)
@@ -622,6 +557,7 @@ func (m Model) renderDetail() string {
 		b.WriteString(m.section("功能說明", t.Description()))
 		b.WriteString(m.section("驗證方式", t.Verify))
 		b.WriteString(m.section("已知限制 / 待辦", t.Limits))
+		b.WriteString(m.renderRemarks(t))
 		b.WriteString(m.renderFiles(t))
 
 		if len(t.Entries) > 0 {
@@ -644,9 +580,10 @@ func (m Model) renderDetail() string {
 		b.WriteString("\n" + dimStyle.Render(fmt.Sprintf("建立 %s ・ 更新 %s",
 			t.Created.Format("2006-01-02 15:04"), humanize(t.Updated))) + "\n\n")
 
+		b.WriteString(m.renderRemarks(t))
 		b.WriteString(m.renderFiles(t))
 		if len(t.Entries) == 0 {
-			b.WriteString(dimStyle.Render("尚無進度（按 n 新增步驟）"))
+			b.WriteString(dimStyle.Render("尚無進度"))
 		} else {
 			b.WriteString(chip("進度", bgLabel, colText, true) + "\n")
 			for i := len(t.Entries) - 1; i >= 0; i-- { // 最新在上
@@ -662,6 +599,21 @@ func (m Model) renderDetail() string {
 	m.detail.Height = m.detailHeight()
 	m.detail.SetContent(b.String())
 	return paneStyle.Width(m.detailWidth()).Height(m.detailHeight()).Render(m.detail.View())
+}
+
+// renderRemarks 列出使用者自己補的備註。
+func (m Model) renderRemarks(t *store.Task) string {
+	if len(t.Remarks) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(chip("備註", bgLabel, colText, true) + "\n")
+	for _, r := range t.Remarks {
+		b.WriteString(dimStyle.Render("  "+r.Time.Format("01-02 15:04")) + "\n")
+		b.WriteString(indent(wrap(r.Text, m.detailWidth()-4), "  ") + "\n")
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 // renderFiles 列出改動檔案，新增的標 +（綠色）、修改的標 ~。
@@ -697,11 +649,9 @@ func (m Model) renderFiles(t *store.Task) string {
 
 func (m Model) renderFooter() string {
 	if m.mode != modeList {
-		label := "新功能"
-		if m.mode == modeAddNote {
-			if t := m.current(); t != nil {
-				label = t.ID + " 步驟"
-			}
+		label := "備註"
+		if t := m.current(); t != nil {
+			label = t.ID + " 備註"
 		}
 		return " " + chip(label, colAccent, colOn, true) + " " + m.input.View() +
 			dimStyle.Render("  (enter 送出 · esc 取消)")
@@ -710,7 +660,7 @@ func (m Model) renderFooter() string {
 		return " " + chip("錯誤", statusHue[store.StatusBlocked], colOn, true) + " " +
 			truncateRaw(textStyle.Render(m.err.Error()), m.width-8)
 	}
-	help := dimStyle.Render("tab 換頁 · j/k 移動 · J/K 捲動詳情 · a 新功能 · n 記步驟 · s 切狀態 · r 重讀 · q 離開")
+	help := dimStyle.Render("tab 換頁 · j/k 移動 · J/K 捲動詳情 · n 加備註 · r 重讀 · q 離開")
 	if m.status != "" {
 		help = chip(m.status, statusHue[store.StatusDone], colOn, false) + " " + help
 	}
