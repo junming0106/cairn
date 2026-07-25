@@ -3,9 +3,11 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"cairn/internal/skills"
 	"cairn/internal/store"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -28,9 +30,10 @@ const (
 const (
 	tabDone = iota
 	tabActive
+	tabSkills
 )
 
-var tabNames = []string{"完成", "進行中"}
+var tabNames = []string{"完成", "進行中", "技能"}
 
 // Model 是 TUI 狀態。
 type Model struct {
@@ -38,11 +41,12 @@ type Model struct {
 	log    *store.Log
 	mtime  time.Time
 	tab    int
-	cursor [2]int // 每個頁籤各自記游標
-	offset [2]int
+	cursor [3]int // 每個頁籤各自記游標
+	offset [3]int
 	mode   mode
 	input  textinput.Model
 	detail viewport.Model
+	skills []skills.Skill
 	width  int
 	height int
 	status string
@@ -54,7 +58,15 @@ type Model struct {
 func New(path string, l *store.Log) Model {
 	ti := textinput.New()
 	ti.CharLimit = 500
-	return Model{path: path, log: l, mtime: store.ModTime(path), input: ti}
+	return Model{
+		path: path, log: l, mtime: store.ModTime(path), input: ti,
+		skills: skills.Load(projectRoot(path)),
+	}
+}
+
+// projectRoot 由 <root>/.cairn/log.json 推回 <root>。
+func projectRoot(logPath string) string {
+	return filepath.Dir(filepath.Dir(logPath))
 }
 
 type tickMsg time.Time
@@ -119,8 +131,23 @@ func (m *Model) reloadIfChanged() {
 	m.clampCursor()
 }
 
+// rows 是目前頁籤的項目數。
+func (m Model) rows() int {
+	if m.tab == tabSkills {
+		return len(m.skills)
+	}
+	return len(m.visible())
+}
+
+func (m Model) currentSkill() *skills.Skill {
+	if m.tab != tabSkills || m.cursor[tabSkills] >= len(m.skills) {
+		return nil
+	}
+	return &m.skills[m.cursor[tabSkills]]
+}
+
 func (m *Model) clampCursor() {
-	n := len(m.visible())
+	n := m.rows()
 	c, o := m.cursor[m.tab], m.offset[m.tab]
 	if c >= n {
 		c = n - 1
@@ -213,6 +240,8 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setTab(tabDone)
 	case "2":
 		m.setTab(tabActive)
+	case "3":
+		m.setTab(tabSkills)
 
 	// ── 清單 ──
 	case "j", "down":
@@ -225,7 +254,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor[m.tab] = 0
 		m.clampCursor()
 	case "G", "end":
-		m.cursor[m.tab] = len(m.visible()) - 1
+		m.cursor[m.tab] = m.rows() - 1
 		m.clampCursor()
 
 	// ── 右側詳情捲動 ──
@@ -240,7 +269,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// ── 備註 ──
 	case "n":
-		if m.current() != nil {
+		if m.tab != tabSkills && m.current() != nil {
 			m.mode = modeAddRemark
 			m.input.Placeholder = "補一則備註"
 			m.input.Focus()
@@ -250,6 +279,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.mtime = time.Time{}
 		m.reloadIfChanged()
+		m.skills = skills.Load(projectRoot(m.path))
 	}
 	return m, nil
 }
@@ -283,6 +313,12 @@ var (
 		store.StatusInProgress: "進行中",
 		store.StatusBlocked:    "卡住",
 		store.StatusDone:       "完成",
+	}
+
+	scopeHue = map[string]lipgloss.AdaptiveColor{
+		skills.ScopeProject: {Light: "28", Dark: "77"},
+		skills.ScopeUser:    {Light: "62", Dark: "111"},
+		skills.ScopePlugin:  {Light: "97", Dark: "141"},
 	}
 
 	kindHue = map[string]lipgloss.AdaptiveColor{
@@ -464,7 +500,7 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderTabs() string {
-	counts := []int{len(m.log.Done()), len(m.log.Active())}
+	counts := []int{len(m.log.Done()), len(m.log.Active()), len(m.skills)}
 	segs := make([]string, len(tabNames))
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%s %d", name, counts[i])
@@ -478,6 +514,9 @@ func (m Model) renderTabs() string {
 }
 
 func (m Model) renderList() string {
+	if m.tab == tabSkills {
+		return m.renderSkillList()
+	}
 	w := m.listWidth()
 	cw := w - 2 // 扣掉窗格左右 padding
 	v := m.visible()
@@ -523,6 +562,76 @@ func (m Model) renderList() string {
 	return paneStyle.Width(w).Height(m.listRows()).Render(strings.Join(rows, "\n"))
 }
 
+// renderSkillList 畫技能清單。
+func (m Model) renderSkillList() string {
+	w := m.listWidth()
+	cw := w - 2
+	rows := []string{}
+	if len(m.skills) == 0 {
+		rows = append(rows, dimStyle.Render("（沒有找到技能）"))
+	}
+	end := m.offset[tabSkills] + m.listRows()
+	if end > len(m.skills) {
+		end = len(m.skills)
+	}
+	for i := m.offset[tabSkills]; i < end; i++ {
+		sk := m.skills[i]
+		name := truncate(sk.Name, cw-4)
+		meta := sk.Scope
+		if sk.Origin != "" {
+			meta += " · " + sk.Origin
+		}
+		if i == m.cursor[tabSkills] {
+			rows = append(rows, bar(" ◆ "+name, cw, bgSelect, colText, true))
+			rows = append(rows, bar("   "+meta, cw, bgSelect, colText, false))
+		} else {
+			rows = append(rows, " "+lipgloss.NewStyle().Foreground(scopeHue[sk.Scope]).Render("◆")+
+				" "+textStyle.Render(name))
+			rows = append(rows, dimStyle.Render("   "+meta))
+		}
+	}
+	for len(rows) < m.listRows() {
+		rows = append(rows, "")
+	}
+	if len(rows) > m.listRows() {
+		rows = rows[:m.listRows()]
+	}
+	return paneStyle.Width(w).Height(m.listRows()).Render(strings.Join(rows, "\n"))
+}
+
+// renderSkillDetail 畫單一技能的詳情。
+func (m Model) renderSkillDetail() string {
+	sk := m.currentSkill()
+	var b strings.Builder
+	if sk == nil {
+		b.WriteString(dimStyle.Render("這個專案目前沒有可用的技能。") + "\n\n")
+		b.WriteString(dimStyle.Render("技能會從這些地方找：") + "\n")
+		b.WriteString(textStyle.Render("  ~/.claude/skills/<名稱>/SKILL.md") + dimStyle.Render("   全域") + "\n")
+		b.WriteString(textStyle.Render("  .claude/skills/<名稱>/SKILL.md") + dimStyle.Render("    專案") + "\n")
+		b.WriteString(dimStyle.Render("  已啟用插件帶的 skills/") + "\n")
+	} else {
+		b.WriteString(chip("技能名稱", bgLabel, colText, true) + "\n")
+		for _, line := range strings.Split(wrap(sk.Name, m.detailWidth()-4), "\n") {
+			b.WriteString(bar("▌ "+line, m.detailWidth()-2, bgSelect, colText, true) + "\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(chip(sk.Scope, scopeHue[sk.Scope], colOn, false))
+		if sk.Origin != "" {
+			b.WriteString(" " + dimStyle.Render(sk.Origin))
+		}
+		b.WriteString("\n" + dimStyle.Render(truncate(sk.Path, m.detailWidth())) + "\n\n")
+		b.WriteString(m.section("說明", sk.Description))
+		if sk.Body != "" {
+			b.WriteString(chip("SKILL.md", bgLabel, colText, true) + "\n")
+			b.WriteString(textStyle.Render(wrap(sk.Body, m.detailWidth()-2)))
+		}
+	}
+	m.detail.Width = m.detailWidth()
+	m.detail.Height = m.detailHeight()
+	m.detail.SetContent(b.String())
+	return paneStyle.Width(m.detailWidth()).Height(m.detailHeight()).Render(m.detail.View())
+}
+
 // section 產生「反白欄位標題 + 縮排內文」的區塊。
 func (m Model) section(label, body string) string {
 	if strings.TrimSpace(body) == "" {
@@ -533,6 +642,9 @@ func (m Model) section(label, body string) string {
 }
 
 func (m Model) renderDetail() string {
+	if m.tab == tabSkills {
+		return m.renderSkillDetail()
+	}
 	t := m.current()
 	var b strings.Builder
 	switch {
@@ -660,7 +772,11 @@ func (m Model) renderFooter() string {
 		return " " + chip("錯誤", statusHue[store.StatusBlocked], colOn, true) + " " +
 			truncateRaw(textStyle.Render(m.err.Error()), m.width-8)
 	}
-	help := dimStyle.Render("tab 換頁 · j/k 移動 · J/K 捲動詳情 · n 加備註 · r 重讀 · q 離開")
+	hint := "tab 換頁 · j/k 移動 · J/K 捲動詳情 · n 加備註 · r 重讀 · q 離開"
+	if m.tab == tabSkills {
+		hint = "tab 換頁 · j/k 移動 · J/K 捲動內容 · r 重新掃描 · q 離開"
+	}
+	help := dimStyle.Render(hint)
 	if m.status != "" {
 		help = chip(m.status, statusHue[store.StatusDone], colOn, false) + " " + help
 	}

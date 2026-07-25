@@ -54,16 +54,28 @@ cairn                            # 開 TUI
 
 | 鍵 | 動作 |
 |---|---|
-| `tab` / `h` `l` / `1` `2` | 切換【完成】【進行中】兩個頁籤 |
+| `tab` / `h` `l` / `1` `2` `3` | 切換【完成】【進行中】【技能】三個頁籤 |
 | `j` / `k` | 上下選項目 |
 | `J` / `K` | 捲動右側詳情 |
 | `ctrl+d` / `ctrl+u` | 詳情翻半頁 |
 | `g` / `G` | 跳到最上 / 最下 |
 | `n` | 為選取項目補一則備註（只有備註是人寫的，其餘由 AI 維護） |
-| `r` | 立即重讀檔案 |
+| `r` | 立即重讀檔案（技能頁則重新掃描） |
 | `q` | 離開 |
 
 TUI 每 2 秒檢查檔案是否被改動，AI 在背景寫入的進度會自動出現，底部顯示「已同步外部更新」。
+
+### 技能頁
+
+列出這個專案目前可用的 AI 技能，來源有三種：
+
+| 來源 | 位置 |
+|---|---|
+| 專案 | `<專案>/.claude/skills/<名稱>/SKILL.md` |
+| 全域 | `~/.claude/skills/<名稱>/SKILL.md` |
+| 插件 | 已啟用插件（設定檔的 `enabledPlugins`）帶的 `skills/` |
+
+右側顯示技能的說明與 `SKILL.md` 全文，可用 `J`/`K` 捲動。按 `r` 重新掃描。
 
 ### 並排開發（tmux）
 
@@ -154,7 +166,8 @@ cairn path
 ```
 main.go                       CLI 子命令與進入點
 internal/store/store.go       資料模型、原子寫入、狀態正規化
-internal/ui/ui.go             Bubble Tea 介面（完成紀錄 / 進行中 雙頁籤）
+internal/ui/ui.go             Bubble Tea 介面（完成 / 進行中 / 技能 三頁籤）
+internal/skills/skills.go     掃描專案、全域與插件的 AI 技能
 npm/                          npm 套件：postinstall 下載對應平台執行檔
 .github/workflows/release.yml 推 v* 標籤時建置四個平台並發佈 Release
 ```
