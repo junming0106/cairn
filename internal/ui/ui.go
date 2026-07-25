@@ -346,7 +346,7 @@ var (
 		"╰───────╯",
 	}
 
-	// wordmark 是 cairn 的大型招牌（6 行、37 欄），由上到下套 wordmarkRamp 的漸層。
+	// wordmark 是 cairn 的大型招牌（6 行、37 欄），由上到下套 wordmarkRamp 的灰階漸層。
 	wordmark = []string{
 		" ██████╗ █████╗ ██╗██████╗ ███╗   ██╗",
 		"██╔════╝██╔══██╗██║██╔══██╗████╗  ██║",
@@ -357,14 +357,14 @@ var (
 	}
 	wordmarkWidth = 37
 
-	// wordmarkRamp 是招牌的漸層：由上而下 青 → 藍 → 紫 → 桃紅。
+	// wordmarkRamp 是招牌的灰階漸層：由上而下逐漸變淡。
 	wordmarkRamp = []lipgloss.AdaptiveColor{
-		{Light: "31", Dark: "45"},
-		{Light: "26", Dark: "75"},
-		{Light: "62", Dark: "111"},
-		{Light: "97", Dark: "141"},
-		{Light: "132", Dark: "177"},
-		{Light: "168", Dark: "213"},
+		{Light: "233", Dark: "255"},
+		{Light: "236", Dark: "252"},
+		{Light: "239", Dark: "249"},
+		{Light: "241", Dark: "246"},
+		{Light: "243", Dark: "243"},
+		{Light: "245", Dark: "240"},
 	}
 
 	dimStyle  = lipgloss.NewStyle().Foreground(colDim)
