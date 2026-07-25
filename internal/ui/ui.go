@@ -337,6 +337,22 @@ var (
 		store.KindDocs:     "文件",
 	}
 
+	// mascot 是 cairn 的吉祥物：一疊小石頭。想換成自己的圖案的話，
+	// 只要保持每一行的顯示寬度一致就好（這裡是 9 欄、4 行）。
+	mascot = []string{
+		" ╭─────╮ ",
+		" │ • • │ ",
+		"╭┴─────┴╮",
+		"╰───────╯",
+	}
+
+	// wordmark 是 cairn 的字體招牌（3 行）。
+	wordmark = []string{
+		"┌─┐┌─┐┬┬─┐┌┐┌",
+		"│  ├─┤│├┬┘│││",
+		"└─┘┴ ┴┴┴└─┘└┘",
+	}
+
 	dimStyle  = lipgloss.NewStyle().Foreground(colDim)
 	textStyle = lipgloss.NewStyle().Foreground(colText)
 	paneStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colDim).Padding(0, 1)
@@ -383,9 +399,20 @@ func (m Model) detailWidth() int {
 	return w
 }
 
+// bannerOn 決定要顯示大招牌還是單行標題（窄畫面或矮視窗時退回單行）。
+func (m Model) bannerOn() bool { return !m.narrow() && m.height >= 28 }
+
+// chrome 是窗格以外佔掉的行數：標題區 + 頁籤列 + 提示列 + 框線。
+func (m Model) chrome() int {
+	if m.bannerOn() {
+		return 10
+	}
+	return 7
+}
+
 // paneHeight 是版面能給窗格內容的總高度（扣掉標題列、頁籤列、提示列、框線）。
 func (m Model) paneHeight() int {
-	h := m.height - 7
+	h := m.height - m.chrome()
 	if h < 3 {
 		h = 3
 	}
@@ -436,14 +463,49 @@ func (m Model) View() string {
 	} else {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(), m.renderDetail())
 	}
-	return strings.Join([]string{m.renderHeader(), m.renderTabs(), body, m.renderFooter()}, "\n")
+	head := m.renderHeader()
+	if m.bannerOn() {
+		head = m.renderBanner()
+	}
+	return strings.Join([]string{head, m.renderTabs(), body, m.renderFooter()}, "\n")
 }
 
-func (m Model) renderHeader() string {
+// counts 是「完成 N ・ 未完成 M」這串字。
+func (m Model) counts() string {
 	c := m.log.Counts()
+	return fmt.Sprintf("完成 %d ・ 未完成 %d", c[store.StatusDone], len(m.log.Tasks)-c[store.StatusDone])
+}
+
+func (m Model) projectName() string {
+	if m.log.Project == "" {
+		return "未命名專案"
+	}
+	return m.log.Project
+}
+
+// renderBanner 畫出吉祥物 + 字體招牌 + 專案名稱。
+func (m Model) renderBanner() string {
+	pet := lipgloss.NewStyle().Foreground(colAccent)
+	mark := lipgloss.NewStyle().Foreground(colText).Bold(true)
+
+	lines := make([]string, len(mascot))
+	for i := range mascot {
+		lines[i] = " " + pet.Render(mascot[i]) + "  "
+		switch {
+		case i < len(wordmark):
+			lines[i] += mark.Render(wordmark[i])
+		default: // 最後一行放專案名稱與計數
+			lines[i] += chip("["+m.projectName()+"]", bgLabel, colText, true) +
+				dimStyle.Render("  "+m.counts())
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderHeader 是矮視窗或窄畫面時的單行標題。
+func (m Model) renderHeader() string {
 	brand := chip("cairn", colAccent, colOn, true)
-	rest := " " + m.log.Project
-	rest += fmt.Sprintf("   完成 %d ・ 未完成 %d", c[store.StatusDone], len(m.log.Tasks)-c[store.StatusDone])
+	rest := " [" + m.projectName() + "]   " + m.counts()
 	w := m.width - lipgloss.Width(brand)
 	if w < 1 {
 		w = 1
@@ -528,8 +590,11 @@ func (m Model) renderDetail() string {
 		b.WriteString(dimStyle.Render("選一個項目查看詳情。"))
 
 	case t.Status == store.StatusDone:
-		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colText).
-			Render(truncate(t.Title, m.detailWidth())) + "\n")
+		b.WriteString(chip("功能名稱", bgLabel, colText, true) + "\n")
+		for _, line := range strings.Split(wrap(t.Title, m.detailWidth()-4), "\n") {
+			b.WriteString(bar("▌ "+line, m.detailWidth()-2, bgSelect, colText, true) + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(dimStyle.Render(t.ID) + " " +
 			chip(kindLabel[t.Kind], kindHue[t.Kind], colOn, false) + " " +
 			chip("● 完成", statusHue[store.StatusDone], colOn, false))
@@ -553,8 +618,11 @@ func (m Model) renderDetail() string {
 		}
 
 	default:
-		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colText).
-			Render(truncate(t.Title, m.detailWidth())) + "\n")
+		b.WriteString(chip("功能名稱", bgLabel, colText, true) + "\n")
+		for _, line := range strings.Split(wrap(t.Title, m.detailWidth()-4), "\n") {
+			b.WriteString(bar("▌ "+line, m.detailWidth()-2, bgSelect, colText, true) + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(dimStyle.Render(t.ID) + " " +
 			chip(kindLabel[t.Kind], kindHue[t.Kind], colOn, false) + " " +
 			chip(statusMark[t.Status]+" "+statusLabel[t.Status], statusHue[t.Status], colOn, false))
