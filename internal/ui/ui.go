@@ -346,11 +346,25 @@ var (
 		"╰───────╯",
 	}
 
-	// wordmark 是 cairn 的字體招牌（3 行）。
+	// wordmark 是 cairn 的大型招牌（6 行、37 欄），由上到下套 wordmarkRamp 的漸層。
 	wordmark = []string{
-		"┌─┐┌─┐┬┬─┐┌┐┌",
-		"│  ├─┤│├┬┘│││",
-		"└─┘┴ ┴┴┴└─┘└┘",
+		" ██████╗ █████╗ ██╗██████╗ ███╗   ██╗",
+		"██╔════╝██╔══██╗██║██╔══██╗████╗  ██║",
+		"██║     ███████║██║██████╔╝██╔██╗ ██║",
+		"██║     ██╔══██║██║██╔══██╗██║╚██╗██║",
+		"╚██████╗██║  ██║██║██║  ██║██║ ╚████║",
+		" ╚═════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝",
+	}
+	wordmarkWidth = 37
+
+	// wordmarkRamp 是招牌的漸層：由上而下 青 → 藍 → 紫 → 桃紅。
+	wordmarkRamp = []lipgloss.AdaptiveColor{
+		{Light: "31", Dark: "45"},
+		{Light: "26", Dark: "75"},
+		{Light: "62", Dark: "111"},
+		{Light: "97", Dark: "141"},
+		{Light: "132", Dark: "177"},
+		{Light: "168", Dark: "213"},
 	}
 
 	dimStyle  = lipgloss.NewStyle().Foreground(colDim)
@@ -400,12 +414,12 @@ func (m Model) detailWidth() int {
 }
 
 // bannerOn 決定要顯示大招牌還是單行標題（窄畫面或矮視窗時退回單行）。
-func (m Model) bannerOn() bool { return !m.narrow() && m.height >= 28 }
+func (m Model) bannerOn() bool { return !m.narrow() && m.height >= 30 }
 
 // chrome 是窗格以外佔掉的行數：標題區 + 頁籤列 + 提示列 + 框線。
 func (m Model) chrome() int {
 	if m.bannerOn() {
-		return 10
+		return 13
 	}
 	return 7
 }
@@ -483,22 +497,21 @@ func (m Model) projectName() string {
 	return m.log.Project
 }
 
-// renderBanner 畫出吉祥物 + 字體招牌 + 專案名稱。
+// renderBanner 畫出大型招牌 + 吉祥物 + 專案名稱。
 func (m Model) renderBanner() string {
+	const mascotTop = 1 // 吉祥物與招牌垂直置中
 	pet := lipgloss.NewStyle().Foreground(colAccent)
-	mark := lipgloss.NewStyle().Foreground(colText).Bold(true)
 
-	lines := make([]string, len(mascot))
-	for i := range mascot {
-		lines[i] = " " + pet.Render(mascot[i]) + "  "
-		switch {
-		case i < len(wordmark):
-			lines[i] += mark.Render(wordmark[i])
-		default: // 最後一行放專案名稱與計數
-			lines[i] += chip("["+m.projectName()+"]", bgLabel, colText, true) +
-				dimStyle.Render("  "+m.counts())
+	lines := make([]string, 0, len(wordmark)+1)
+	for i, w := range wordmark {
+		line := " " + lipgloss.NewStyle().Foreground(wordmarkRamp[i]).Render(w)
+		if j := i - mascotTop; j >= 0 && j < len(mascot) {
+			line += strings.Repeat(" ", wordmarkWidth-lipgloss.Width(w)+3) + pet.Render(mascot[j])
 		}
+		lines = append(lines, line)
 	}
+	lines = append(lines, " "+chip("["+m.projectName()+"]", bgLabel, colText, true)+
+		dimStyle.Render("  "+m.counts()))
 	return strings.Join(lines, "\n")
 }
 
