@@ -337,13 +337,15 @@ var (
 		store.KindDocs:     "文件",
 	}
 
-	// mascot 是 cairn 的吉祥物：一疊小石頭。想換成自己的圖案的話，
-	// 只要保持每一行的顯示寬度一致就好（這裡是 9 欄、4 行）。
+	// mascot 是 cairn 的吉祥物：三顆疊在一起的圓潤石頭，最上面那顆有眼睛。
+	// 想換成自己的圖案的話，只要保持每一行的顯示寬度一致就好（這裡是 11 欄、6 行）。
 	mascot = []string{
-		" ╭─────╮ ",
-		" │ • • │ ",
-		"╭┴─────┴╮",
-		"╰───────╯",
+		"   ╭───╮   ",
+		"  ( • • )  ",
+		"  ╭─────╮  ",
+		" (       ) ",
+		" ╭───────╮ ",
+		"(_________)",
 	}
 
 	// wordmark 是 cairn 的大型招牌（6 行、37 欄），由上到下套 wordmarkRamp 的灰階漸層。
@@ -499,7 +501,7 @@ func (m Model) projectName() string {
 
 // renderBanner 畫出大型招牌 + 吉祥物 + 專案名稱。
 func (m Model) renderBanner() string {
-	const mascotTop = 1 // 吉祥物與招牌垂直置中
+	const mascotTop = 0 // 吉祥物與招牌等高，逐行對齊
 	pet := lipgloss.NewStyle().Foreground(colAccent)
 
 	lines := make([]string, 0, len(wordmark)+1)
