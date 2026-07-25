@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -619,7 +620,7 @@ func (m Model) renderSkillDetail() string {
 		if sk.Origin != "" {
 			b.WriteString(" " + dimStyle.Render(sk.Origin))
 		}
-		b.WriteString("\n" + dimStyle.Render(truncate(sk.Path, m.detailWidth())) + "\n\n")
+		b.WriteString("\n" + dimStyle.Render(shortPath(sk.Path, projectRoot(m.path), m.detailWidth())) + "\n\n")
 		b.WriteString(m.section("說明", sk.Description))
 		if sk.Body != "" {
 			b.WriteString(chip("SKILL.md", bgLabel, colText, true) + "\n")
@@ -797,6 +798,32 @@ func truncate(s string, max int) string {
 		r = r[:len(r)-1]
 	}
 	return string(r) + "…"
+}
+
+// shortPath 把路徑縮短到指定寬度，優先保留尾端（資料夾與檔名才是有資訊的部分）：
+// 先轉成相對於專案根目錄的路徑，再把家目錄換成 ~，還是太長就從左邊裁到下一個 /。
+func shortPath(p, root string, max int) string {
+	if root != "" {
+		if rel, err := filepath.Rel(root, p); err == nil && !strings.HasPrefix(rel, "..") {
+			p = rel
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home) {
+		p = "~" + strings.TrimPrefix(p, home)
+	}
+	if max < 4 || lipgloss.Width(p) <= max {
+		return p
+	}
+	r := []rune(p)
+	for len(r) > 0 && lipgloss.Width(string(r))+1 > max {
+		r = r[1:]
+	}
+	// 只有在下一個 / 就在附近時才對齊過去，否則寧可從半個資料夾名開始，
+	// 也不要為了對齊把有資訊的中段全部丟掉。
+	if i := strings.IndexByte(string(r), '/'); i >= 0 && i <= 8 {
+		r = []rune(string(r)[i:])
+	}
+	return "…" + string(r)
 }
 
 // truncateRaw 針對已上色的字串做寬度裁切（不附加省略號以免破壞 ANSI）。
