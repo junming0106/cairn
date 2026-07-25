@@ -1,0 +1,5 @@
+cairn
+dist/
+npm/bin/cairn
+npm/node_modules/
+.DS_Store

@@ -1,0 +1,14 @@
+{
+  "name": "@__GH_USER__/cairn",
+  "version": "0.1.0",
+  "description": "終端裡的 AI 開發紀錄：AI 用子命令寫進度，人用 TUI 看完成紀錄",
+  "bin": { "cairn": "bin/cairn.js" },
+  "scripts": { "postinstall": "node install.js" },
+  "files": ["bin/cairn.js", "install.js"],
+  "repository": { "type": "git", "url": "git+https://github.com/__GH_USER__/cairn.git" },
+  "keywords": ["tui", "changelog", "ai", "claude", "devlog", "bubbletea"],
+  "license": "MIT",
+  "engines": { "node": ">=16" },
+  "os": ["darwin", "linux"],
+  "cpu": ["x64", "arm64"]
+}
