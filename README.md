@@ -62,6 +62,15 @@ cairn                            # 開 TUI
 
 紀錄檔會從目前目錄往上層尋找 `.cairn/log.json`，所以在專案任何子目錄下都能用。
 
+也可以用 tmux 併排開發，左邊開 AI、右邊開紀錄頁：
+
+```sh
+cairn dev            # 左邊 claude、右邊紀錄頁
+cairn dev codex      # 換成 codex
+```
+
+需要 tmux（見上面「安裝」第 2 步）。已經在 tmux 裡執行時會直接切分目前的視窗。
+
 ### TUI 按鍵
 
 | 鍵                                | 動作                                                     |
@@ -115,46 +124,6 @@ cairn spec build S-001 [--kind feature|fix|refactor|docs]   # 依規格開任務
 | 插件 | 已啟用插件（設定檔的 `enabledPlugins`）帶的 `skills/` |
 
 右側顯示技能的說明與 `SKILL.md` 全文，可用 `J`/`K` 捲動。按 `r` 重新掃描。
-
-### 並排開發（tmux）
-
-```sh
-cairn dev            # 左邊 claude、右邊紀錄頁
-cairn dev codex      # 換成 codex
-```
-
-需要 tmux（見上面「安裝」第 2 步）。已經在 tmux 裡執行時會直接切分目前的視窗。
-
-### 命令列（給 AI 用）
-
-```sh
-cairn add "美化登入頁面" --kind feature        # 印出 T-001，kind: feature|fix|refactor|docs
-cairn log T-001 "把 login.html 包成白色卡片" --files templates/login.html
-cairn done T-001 \
-  --summary "登入頁改用 form-container 樣式並包成白色卡片…" \
-  --verify  "開 /login/ 目視確認排版，並用錯誤密碼送出確認錯誤訊息正常" \
-  --limits  "註冊頁還沒套用同樣樣式" \
-  --files   templates/login.html,static/style.css
-cairn status T-001 blocked                     # todo|in_progress|blocked
-cairn list                                     # 純文字，適合 AI 讀
-cairn show T-001
-cairn path
-```
-
-- `cairn done` 的 `--summary`（功能說明）與 `--verify`（驗證方式）是**必填** — 完成紀錄要讓人看得懂做了什麼、怎麼確認可用。
-- `cairn status <ID> done` 會被擋下並提示改用 `cairn done`。
-- ID 可用 `T-001` 或 `1`；狀態接受簡寫（`wip` → `in_progress`）；類型接受簡寫（`feat` → `feature`）。
-- 寫檔是「暫存檔 + rename」，TUI 不會讀到半截 JSON。
-
-## 讓 AI 自動維護紀錄
-
-跑 `cairn init --hook`（新專案）或事後 `cairn hook install`（既有專案，可重複執行），會自動：
-
-- 把「進度紀錄」「規格書」的使用說明寫進 `CLAUDE.md`（已經寫過就不會重複寫）
-- 裝一個 Stop hook：動過程式碼卻沒寫紀錄時擋下 AI，要求先補寫
-- hook script 放在 `.claude/hooks/cairn-stop-check.sh`，設定合併進 `.claude/settings.local.json`（機器專屬、不進 git）
-
-不是用 Claude Code（例如 Codex）的話，把同一段說明自己寫進 `AGENTS.md` 即可，cairn 指令本身跟工具無關，只是沒有自動擋下未寫紀錄的 hook。
 
 ## 專案結構
 
