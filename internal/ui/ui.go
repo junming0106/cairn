@@ -31,10 +31,11 @@ const (
 const (
 	tabDone = iota
 	tabActive
+	tabSpecs
 	tabSkills
 )
 
-var tabNames = []string{"完成", "進行中", "技能"}
+var tabNames = []string{"完成", "進行中", "規格書", "技能"}
 
 // Model 是 TUI 狀態。
 type Model struct {
@@ -42,8 +43,8 @@ type Model struct {
 	log    *store.Log
 	mtime  time.Time
 	tab    int
-	cursor [3]int // 每個頁籤各自記游標
-	offset [3]int
+	cursor [4]int // 每個頁籤各自記游標
+	offset [4]int
 	mode   mode
 	input  textinput.Model
 	detail viewport.Model
@@ -88,11 +89,52 @@ func (m Model) visible() []*store.Task {
 }
 
 func (m Model) current() *store.Task {
+	if m.tab != tabDone && m.tab != tabActive {
+		return nil
+	}
 	v := m.visible()
 	if len(v) == 0 || m.cursor[m.tab] >= len(v) {
 		return nil
 	}
 	return v[m.cursor[m.tab]]
+}
+
+func (m Model) currentSpec() *store.Spec {
+	if m.tab != tabSpecs {
+		return nil
+	}
+	v := m.log.SpecList()
+	if len(v) == 0 || m.cursor[tabSpecs] >= len(v) {
+		return nil
+	}
+	return v[m.cursor[tabSpecs]]
+}
+
+// rowIDs 是目前頁籤每一列的 ID，供重新載入後把游標移回原本的項目。
+func (m Model) rowIDs() []string {
+	var out []string
+	switch m.tab {
+	case tabSpecs:
+		for _, s := range m.log.SpecList() {
+			out = append(out, s.ID)
+		}
+	case tabSkills:
+		return nil
+	default:
+		for _, t := range m.visible() {
+			out = append(out, t.ID)
+		}
+	}
+	return out
+}
+
+// currentID 是游標所在項目的 ID（技能頁沒有 ID，回空字串）。
+func (m Model) currentID() string {
+	ids := m.rowIDs()
+	if c := m.cursor[m.tab]; c >= 0 && c < len(ids) {
+		return ids[c]
+	}
+	return ""
 }
 
 func (m *Model) save() {
@@ -114,19 +156,18 @@ func (m *Model) reloadIfChanged() {
 		m.err = err
 		return
 	}
-	var keep string
-	if t := m.current(); t != nil {
-		keep = t.ID
-	}
+	keep := m.currentID()
 	m.log = l
 	m.mtime = mt
 	m.err = nil
 	m.status = "已同步外部更新 " + mt.Format("15:04:05")
-	m.cursor[m.tab] = 0
-	for i, t := range m.visible() {
-		if t.ID == keep {
-			m.cursor[m.tab] = i
-			break
+	if keep != "" {
+		m.cursor[m.tab] = 0
+		for i, id := range m.rowIDs() {
+			if id == keep {
+				m.cursor[m.tab] = i
+				break
+			}
 		}
 	}
 	m.clampCursor()
@@ -134,10 +175,14 @@ func (m *Model) reloadIfChanged() {
 
 // rows 是目前頁籤的項目數。
 func (m Model) rows() int {
-	if m.tab == tabSkills {
+	switch m.tab {
+	case tabSkills:
 		return len(m.skills)
+	case tabSpecs:
+		return len(m.log.Specs)
+	default:
+		return len(m.visible())
 	}
-	return len(m.visible())
 }
 
 func (m Model) currentSkill() *skills.Skill {
@@ -219,6 +264,17 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// focusSpec 把游標移到指定的規格書上（排序變動後用）。
+func (m *Model) focusSpec(id string) {
+	for i, s := range m.log.SpecList() {
+		if s.ID == id {
+			m.cursor[tabSpecs] = i
+			break
+		}
+	}
+	m.clampCursor()
+}
+
 func (m *Model) setTab(t int) {
 	if t != m.tab {
 		m.tab = t
@@ -242,6 +298,8 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "2":
 		m.setTab(tabActive)
 	case "3":
+		m.setTab(tabSpecs)
+	case "4":
 		m.setTab(tabSkills)
 
 	// ── 清單 ──
@@ -270,11 +328,20 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// ── 備註 ──
 	case "n":
-		if m.tab != tabSkills && m.current() != nil {
+		if m.current() != nil {
 			m.mode = modeAddRemark
 			m.input.Placeholder = "補一則備註"
 			m.input.Focus()
 			m.status = ""
+		}
+
+	// ── 規格書：待完成 / 已完成 ──
+	case "s":
+		if s := m.currentSpec(); s != nil {
+			s.SetSpecStatus(store.NextSpecStatus(s.Status))
+			m.save()
+			m.focusSpec(s.ID) // 換狀態會改變排序，游標跟著同一份規格書走
+			m.status = s.ID + " → " + specLabel[s.Status]
 		}
 
 	case "r":
@@ -314,6 +381,19 @@ var (
 		store.StatusInProgress: "進行中",
 		store.StatusBlocked:    "卡住",
 		store.StatusDone:       "完成",
+	}
+
+	specHue = map[string]lipgloss.AdaptiveColor{
+		store.SpecTodo: {Light: "62", Dark: "111"},
+		store.SpecDone: {Light: "28", Dark: "77"},
+	}
+	specMark = map[string]string{
+		store.SpecTodo: "◇",
+		store.SpecDone: "◆",
+	}
+	specLabel = map[string]string{
+		store.SpecTodo: "待完成",
+		store.SpecDone: "已完成",
 	}
 
 	scopeHue = map[string]lipgloss.AdaptiveColor{
@@ -501,7 +581,7 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderTabs() string {
-	counts := []int{len(m.log.Done()), len(m.log.Active()), len(m.skills)}
+	counts := []int{len(m.log.Done()), len(m.log.Active()), len(m.log.Specs), len(m.skills)}
 	segs := make([]string, len(tabNames))
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%s %d", name, counts[i])
@@ -515,8 +595,11 @@ func (m Model) renderTabs() string {
 }
 
 func (m Model) renderList() string {
-	if m.tab == tabSkills {
+	switch m.tab {
+	case tabSkills:
 		return m.renderSkillList()
+	case tabSpecs:
+		return m.renderSpecList()
 	}
 	w := m.listWidth()
 	cw := w - 2 // 扣掉窗格左右 padding
@@ -633,6 +716,78 @@ func (m Model) renderSkillDetail() string {
 	return paneStyle.Width(m.detailWidth()).Height(m.detailHeight()).Render(m.detail.View())
 }
 
+// renderSpecList 畫規格書清單。
+func (m Model) renderSpecList() string {
+	w := m.listWidth()
+	cw := w - 2
+	specs := m.log.SpecList()
+	rows := []string{}
+	if len(specs) == 0 {
+		rows = append(rows, dimStyle.Render("（還沒有規格書）"))
+	}
+	end := m.offset[tabSpecs] + m.listRows()
+	if end > len(specs) {
+		end = len(specs)
+	}
+	for i := m.offset[tabSpecs]; i < end; i++ {
+		s := specs[i]
+		title := truncate(s.Title, cw-4)
+		if i == m.cursor[tabSpecs] {
+			meta := fmt.Sprintf("%s  %s  %s", s.ID, specLabel[s.Status], humanizeShort(s.Updated))
+			rows = append(rows, bar(" "+specMark[s.Status]+" "+title, cw, bgSelect, colText, true))
+			rows = append(rows, bar("   "+meta, cw, bgSelect, colText, false))
+		} else {
+			mark := lipgloss.NewStyle().Foreground(specHue[s.Status]).Render(specMark[s.Status])
+			rows = append(rows, " "+mark+" "+textStyle.Render(title))
+			rows = append(rows, dimStyle.Render("   "+s.ID+"  ")+
+				lipgloss.NewStyle().Foreground(specHue[s.Status]).Render(specLabel[s.Status])+
+				dimStyle.Render("  "+humanizeShort(s.Updated)))
+		}
+	}
+	for len(rows) < m.listRows() {
+		rows = append(rows, "")
+	}
+	if len(rows) > m.listRows() {
+		rows = rows[:m.listRows()]
+	}
+	return paneStyle.Width(w).Height(m.listRows()).Render(strings.Join(rows, "\n"))
+}
+
+// renderSpecDetail 畫規格正文與討論串。
+func (m Model) renderSpecDetail() string {
+	s := m.currentSpec()
+	var b strings.Builder
+	if s == nil {
+		b.WriteString(dimStyle.Render("規格書：跟 AI 談好一項功能要做什麼之後，它會寫進這裡。") + "\n\n")
+		b.WriteString(dimStyle.Render("在旁邊的 AI 視窗直接說你想做什麼，談定了請它記進規格書。") + "\n\n")
+		b.WriteString(textStyle.Render("  s") + dimStyle.Render("  切換待完成 / 已完成") + "\n")
+	} else {
+		b.WriteString(chip("規格書", bgLabel, colText, true) + "\n")
+		for _, line := range strings.Split(wrap(s.Title, m.detailWidth()-4), "\n") {
+			b.WriteString(bar("▌ "+line, m.detailWidth()-2, bgSelect, colText, true) + "\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render(s.ID) + " " +
+			chip(specMark[s.Status]+" "+specLabel[s.Status], specHue[s.Status], colOn, false))
+		if s.TaskID != "" {
+			b.WriteString(" " + dimStyle.Render("→ "+s.TaskID))
+		}
+		b.WriteString("\n" + dimStyle.Render("建立 "+s.Created.Format("2006-01-02 15:04")+
+			" ・ 更新 "+humanize(s.Updated)) + "\n\n")
+
+		if strings.TrimSpace(s.Body) == "" {
+			b.WriteString(chip("規格正文", bgLabel, colText, true) + "\n")
+			b.WriteString(indent(wrap("（還沒有正文）", m.detailWidth()-4), "  ") + "\n")
+		} else {
+			b.WriteString(m.section("規格正文", s.Body))
+		}
+	}
+	m.detail.Width = m.detailWidth()
+	m.detail.Height = m.detailHeight()
+	m.detail.SetContent(b.String())
+	return paneStyle.Width(m.detailWidth()).Height(m.detailHeight()).Render(m.detail.View())
+}
+
 // section 產生「反白欄位標題 + 縮排內文」的區塊。
 func (m Model) section(label, body string) string {
 	if strings.TrimSpace(body) == "" {
@@ -643,8 +798,11 @@ func (m Model) section(label, body string) string {
 }
 
 func (m Model) renderDetail() string {
-	if m.tab == tabSkills {
+	switch m.tab {
+	case tabSkills:
 		return m.renderSkillDetail()
+	case tabSpecs:
+		return m.renderSpecDetail()
 	}
 	t := m.current()
 	var b strings.Builder
@@ -774,8 +932,11 @@ func (m Model) renderFooter() string {
 			truncateRaw(textStyle.Render(m.err.Error()), m.width-8)
 	}
 	hint := "tab 換頁 · j/k 移動 · J/K 捲動詳情 · n 加備註 · r 重讀 · q 離開"
-	if m.tab == tabSkills {
+	switch m.tab {
+	case tabSkills:
 		hint = "tab 換頁 · j/k 移動 · J/K 捲動內容 · r 重新掃描 · q 離開"
+	case tabSpecs:
+		hint = "tab 換頁 · j/k 移動 · J/K 捲動正文 · s 待完成/已完成 · r 重讀 · q 離開"
 	}
 	help := dimStyle.Render(hint)
 	if m.status != "" {

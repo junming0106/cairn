@@ -99,6 +99,7 @@ type Remark struct {
 type Log struct {
 	Version int     `json:"version"`
 	Project string  `json:"project,omitempty"`
+	Specs   []*Spec `json:"specs,omitempty"`
 	Tasks   []*Task `json:"tasks"`
 }
 
@@ -129,7 +130,7 @@ func Discover(start string) string {
 func Load(path string) (*Log, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &Log{Version: 1, Tasks: []*Task{}}, nil
+		return &Log{Version: 1, Tasks: []*Task{}, Specs: []*Spec{}}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -141,12 +142,22 @@ func Load(path string) (*Log, error) {
 	if l.Tasks == nil {
 		l.Tasks = []*Task{}
 	}
+	if l.Specs == nil {
+		l.Specs = []*Spec{} // 舊紀錄沒有規格書
+	}
 	if l.Version == 0 {
 		l.Version = 1
 	}
 	for _, t := range l.Tasks {
 		if t.Kind == "" {
 			t.Kind = KindFeature // 舊紀錄沒有類型欄位
+		}
+	}
+	for _, s := range l.Specs {
+		if st, err := NormalizeSpecStatus(s.Status); err == nil {
+			s.Status = st
+		} else {
+			s.Status = SpecTodo // 空的或早期的狀態值一律當成待完成
 		}
 	}
 	return &l, nil

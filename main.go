@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"cairn/internal/hooks"
 	"cairn/internal/store"
 	"cairn/internal/ui"
 
@@ -19,9 +20,10 @@ import (
 const usage = `cairn — 終端專案開發紀錄
 
 用法：
-  cairn                          開啟 TUI（完成紀錄 / 進行中 兩個頁籤）
+  cairn                          開啟 TUI（完成 / 進行中 / 規格書 / 技能 四個頁籤）
   cairn dev [claude|codex]       用 tmux 左右分割：左邊 AI、右邊紀錄頁
-  cairn init [專案名稱]           在目前目錄建立 .cairn/log.json
+  cairn init [專案名稱] [--hook]  在目前目錄建立 .cairn/log.json，加 --hook 順便裝好 Stop hook
+  cairn hook install             安裝／更新 Claude Code 的 Stop hook 與 CLAUDE.md 進度紀錄段落
 
   cairn add <標題> [--kind feature|fix|refactor|docs] [--tags a,b]
                                 開始一項功能，印出任務 ID
@@ -32,6 +34,10 @@ const usage = `cairn — 終端專案開發紀錄
                 [--files 改過的檔案] [--new 新增的檔案]
                                 完成一項功能，寫入完整紀錄
   cairn status <ID> <狀態>        設定狀態：todo|in_progress|blocked|done
+
+  cairn spec <子命令>             規格書：把跟人談好的需求寫下來
+                                add / list / show / set / status / build
+                                詳見 cairn spec help
 
   cairn list [--status <狀態>] [--json]
                                 列出任務（純文字，適合 AI 讀取）
@@ -55,6 +61,8 @@ func main() {
 	switch cmd {
 	case "init":
 		err = cmdInit(rest)
+	case "hook":
+		err = cmdHook(rest)
 	case "dev":
 		err = cmdDev(rest)
 	case "add":
@@ -65,6 +73,8 @@ func main() {
 		err = cmdDone(rest)
 	case "status":
 		err = cmdStatus(rest)
+	case "spec":
+		err = cmdSpec(rest)
 	case "list", "ls":
 		err = cmdList(rest)
 	case "show":
@@ -111,6 +121,7 @@ func runTUI() error {
 }
 
 func cmdInit(args []string) error {
+	args, withHook := hasFlag(args, "hook")
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -127,6 +138,33 @@ func cmdInit(args []string) error {
 		return err
 	}
 	fmt.Printf("已建立 %s（專案：%s）\n", p, name)
+	if withHook {
+		return installHook(cwd)
+	}
+	return nil
+}
+
+// cmdHook 是 `cairn hook` 的子命令分派。
+func cmdHook(args []string) error {
+	if len(args) == 0 || args[0] != "install" {
+		return fmt.Errorf("用法：cairn hook install")
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	return installHook(cwd)
+}
+
+// installHook 安裝 Stop hook 與 CLAUDE.md 進度紀錄段落，並印出結果。
+func installHook(cwd string) error {
+	msgs, err := hooks.Install(cwd)
+	if err != nil {
+		return err
+	}
+	for _, m := range msgs {
+		fmt.Println(m)
+	}
 	return nil
 }
 
@@ -286,10 +324,18 @@ func cmdDone(args []string) error {
 		t.AddEntry("完成", f, c)
 	}
 	t.Complete(summary, verify, limits)
+	// 這項任務是從規格書開出來的話，規格書也一起結掉。
+	spec := l.SpecForTask(t.ID)
+	if spec != nil {
+		spec.SetSpecStatus(store.SpecDone)
+	}
 	if err := store.Save(p, l); err != nil {
 		return err
 	}
 	fmt.Printf("%s 已完成：%s（%d 個檔案）\n", t.ID, t.Title, len(t.AllFiles()))
+	if spec != nil {
+		fmt.Printf("規格書 %s → 已完成\n", spec.ID)
+	}
 	return nil
 }
 
@@ -372,6 +418,9 @@ func cmdShow(args []string) error {
 		return fmt.Errorf("找不到任務 %s", args[0])
 	}
 	fmt.Printf("%s  %s  [%s / %s]\n", t.ID, t.Title, t.Kind, t.Status)
+	if s := l.SpecForTask(t.ID); s != nil {
+		fmt.Printf("依據規格書：%s（cairn spec show %s）\n", s.ID, s.ID)
+	}
 	if len(t.Tags) > 0 {
 		fmt.Printf("標籤：%s\n", strings.Join(t.Tags, ", "))
 	}
