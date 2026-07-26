@@ -148,87 +148,30 @@ cairn path
 
 ## 讓 AI 自動維護紀錄
 
-把這段加進專案的 `CLAUDE.md`（或 `AGENTS.md`）：
+跑 `cairn init --hook`（新專案）或事後 `cairn hook install`（既有專案，可重複執行），會自動：
 
-```markdown
-## 進度紀錄
+- 把「進度紀錄」「規格書」的使用說明寫進 `CLAUDE.md`（已經寫過就不會重複寫）
+- 裝一個 Stop hook：動過程式碼卻沒寫紀錄時擋下 AI，要求先補寫
+- hook script 放在 `.claude/hooks/cairn-stop-check.sh`，設定合併進 `.claude/settings.local.json`（機器專屬、不進 git）
 
-本專案用 `cairn` 追蹤開發進度，人會在終端用 TUI 查看。
-
-- 開始一項功能前：`cairn add "<簡短功能標題>" --kind feature|fix|refactor|docs`，記下回傳的 ID。
-- 開發過程中每個步驟：`cairn log <ID> "<這一步做了什麼>" --files <改動的檔案>`
-- 功能完成時：`cairn done <ID> --summary "<實作了哪些內容>" --verify "<你怎麼確認它可用>" --limits "<已知限制，沒有就省略>" --files <改動的檔案>`
-- 被外部因素卡住時：`cairn status <ID> blocked`
-- 接手既有工作前先讀 `cairn list` 與 `cairn show <ID>`，確認上次進行到哪。
-
-內容寫給人看，不要貼程式碼。`--verify` 要寫你實際做過的驗證，沒驗證過就照實說。
-
-## 規格書
-
-跟人談定一項功能要做什麼之後，先寫成規格書再動手：
-
-- `cairn spec add "<標題>" --body "<正文>"` — 正文要寫清楚做什麼、範圍到哪、怎麼算完成（長文用 `--body-file`）
-- 動手前先 `cairn spec list` / `cairn spec show <ID>`，確認要做的是哪一份、有沒有已經做過
-- `cairn spec build <ID>` 依規格開出開發任務，之後照上面的紀錄流程走
-- 談話中需求改了就 `cairn spec set <ID> --body "<新正文>"` 整份改寫
-```
-
-再搭配一個 Stop hook，就能在「動過程式碼卻沒寫紀錄」時擋下 AI 要它補寫。這段加上 hook 不用手動複製，跑 `cairn init --hook`（新專案）或事後 `cairn hook install`（既有專案，可重複執行）就會自動產生 `.claude/hooks/cairn-stop-check.sh`、合併進 `.claude/settings.local.json`（機器專屬、不進 git），並把上面這段補進 `CLAUDE.md`。
-
-## 資料格式
-
-`.cairn/log.json`，純文字、可進 git、可 `git diff` 看歷史：
-
-```json
-{
-  "version": 1,
-  "project": "LearnDjango",
-  "specs": [
-    {
-      "id": "S-001",
-      "title": "文章分類功能",
-      "status": "todo",
-      "body": "## 目標\n每篇文章可以掛一個分類。\n\n## 完成條件\n- 後台能建立分類…",
-      "task_id": "T-002",
-      "created": "2026-07-26T09:10:00+08:00",
-      "updated": "2026-07-26T09:40:00+08:00"
-    }
-  ],
-  "tasks": [
-    {
-      "id": "T-001",
-      "title": "美化登入頁面",
-      "kind": "feature",
-      "status": "done",
-      "summary": "登入頁改用既有的 form-container 樣式並包成白色卡片…",
-      "verify": "開 /login/ 目視確認排版，並用錯誤密碼送出一次…",
-      "limits": "註冊頁還沒套用同樣樣式。",
-      "created": "2026-07-25T22:21:00+08:00",
-      "updated": "2026-07-25T22:33:00+08:00",
-      "completed": "2026-07-25T22:33:00+08:00",
-      "entries": [
-        {
-          "time": "2026-07-25T22:25:00+08:00",
-          "note": "把 login.html 包成白色卡片",
-          "files": ["Learn_django/app/templates/login.html"]
-        }
-      ]
-    }
-  ]
-}
-```
-
-舊版紀錄（沒有 `kind` / `summary` / `verify` / `specs`）仍可讀取：類型預設為 `feature`，功能說明退回最後一筆步驟說明，沒有 `specs` 就是還沒用過規格書。
+不是用 Claude Code（例如 Codex）的話，把同一段說明自己寫進 `AGENTS.md` 即可，cairn 指令本身跟工具無關，只是沒有自動擋下未寫紀錄的 hook。
 
 ## 專案結構
 
 ```
-main.go                       CLI 子命令與進入點
-spec_cmd.go                   cairn spec 子命令
-internal/store/store.go       資料模型、原子寫入、狀態正規化
-internal/store/spec.go        規格書資料模型與狀態
-internal/ui/ui.go             Bubble Tea 介面（完成 / 進行中 / 規格書 / 技能 四頁籤）
-internal/skills/skills.go     掃描專案、全域與插件的 AI 技能
-npm/                          npm 套件：postinstall 下載對應平台執行檔
-.github/workflows/release.yml 推 v* 標籤時建置四個平台並發佈 Release
+cairn/
+├── main.go                        CLI 子命令與進入點
+├── spec_cmd.go                    cairn spec 子命令
+├── internal/
+│   ├── store/
+│   │   ├── store.go               資料模型、原子寫入、狀態正規化
+│   │   └── spec.go                規格書資料模型與狀態
+│   ├── ui/
+│   │   └── ui.go                  Bubble Tea 介面（完成 / 進行中 / 規格書 / 技能 四頁籤）
+│   ├── skills/
+│   │   └── skills.go              掃描專案、全域與插件的 AI 技能
+│   └── hooks/
+│       └── hooks.go               安裝 Stop hook 與 CLAUDE.md 進度紀錄段落
+├── npm/                           npm 套件：postinstall 下載對應平台執行檔
+└── .github/workflows/release.yml  推 v* 標籤時建置四個平台並發佈 Release
 ```
