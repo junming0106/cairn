@@ -29,6 +29,25 @@
 
 ## 安裝
 
+**1. 安裝 Node.js / npm**（已經有的話跳過，`npm -v` 可以確認）
+
+```sh
+brew install node        # macOS
+sudo apt install nodejs npm   # Debian / Ubuntu
+```
+
+或到 [nodejs.org](https://nodejs.org) 下載 LTS 版。
+
+**2. 安裝 tmux**（`cairn dev` 分割畫面要用，其餘指令不需要，可跳過）
+
+```sh
+brew install tmux        # macOS
+sudo apt install tmux    # Debian / Ubuntu
+sudo dnf install tmux    # Fedora
+```
+
+**3. 安裝 cairn**
+
 ```sh
 npm install -g @junming_h/cairn
 ```
@@ -104,15 +123,7 @@ cairn dev            # 左邊 claude、右邊紀錄頁
 cairn dev codex      # 換成 codex
 ```
 
-需要另外安裝 tmux（npm 套件不會連 tmux 一起裝，這是系統套件）：
-
-```sh
-brew install tmux        # macOS
-sudo apt install tmux    # Debian / Ubuntu
-sudo dnf install tmux    # Fedora
-```
-
-已經在 tmux 裡執行時會直接切分目前的視窗。`cairn` 的其他指令（`init`、`add`、`log`、`done`、TUI…）都不需要 tmux，只有 `cairn dev` 用得到。
+需要 tmux（見上面「安裝」第 2 步）。已經在 tmux 裡執行時會直接切分目前的視窗。
 
 ### 命令列（給 AI 用）
 
