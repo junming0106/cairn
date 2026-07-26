@@ -33,15 +33,6 @@
 npm install -g @junming_h/cairn
 ```
 
-或不安裝直接用：`npx @junming_h/cairn`
-
-自己建置（需要 Go 1.23+）：
-
-```sh
-git clone https://github.com/junming0106/cairn.git && cd cairn
-go build -o cairn . && mv cairn /opt/homebrew/bin/   # 或任何 PATH 目錄
-```
-
 ## 使用
 
 ```sh
@@ -113,7 +104,15 @@ cairn dev            # 左邊 claude、右邊紀錄頁
 cairn dev codex      # 換成 codex
 ```
 
-需要 tmux（`brew install tmux`）。已經在 tmux 裡執行時會直接切分目前的視窗。
+需要另外安裝 tmux（npm 套件不會連 tmux 一起裝，這是系統套件）：
+
+```sh
+brew install tmux        # macOS
+sudo apt install tmux    # Debian / Ubuntu
+sudo dnf install tmux    # Fedora
+```
+
+已經在 tmux 裡執行時會直接切分目前的視窗。`cairn` 的其他指令（`init`、`add`、`log`、`done`、TUI…）都不需要 tmux，只有 `cairn dev` 用得到。
 
 ### 命令列（給 AI 用）
 
